@@ -6,6 +6,8 @@ from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  #
 from models import BaseModel
 import wandb
 import os
+from pathlib import Path
+import hashlib
 
 from dataloader.FireSpreadDataset import FireSpreadDataset
 from dataloader.utils import get_means_stds_missing_values
@@ -30,6 +32,11 @@ class MyLightningCLI(LightningCLI):
                             default=False, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None,
                             help="Path to checkpoint to load for resuming training, for testing and predicting.")
+        parser.add_argument("--unique_tag", type=str, default=None,
+                            help="A unique tag to add to the wandb run name, this unique tag should be the same " \
+                            "for different folds of the same configuration. This makes it easier to group fold runs in wandb." \
+                            "If None, it will be automatically set to a hash of the three" \
+                            "config yaml files used to run the experiment (data, trainer, config).")
 
     def before_instantiate_classes(self):
         # The number of features is only known inside the data module, but we need that info to instantiate the model.
@@ -79,6 +86,19 @@ class MyLightningCLI(LightningCLI):
         wandb.define_metric("val_loss", summary="min")
         wandb.define_metric("train_f1_epoch", summary="max")
         wandb.define_metric("val_f1", summary="max")
+        
+        unique_tag = self.config.unique_tag
+        if unique_tag is None: # This may not work when using sweeps so better set tag manually in that case
+            data_file_name = Path(self.config.data.__path__.absolute).name
+            trainer_file_name = Path(
+                self.config.trainer.__path__.absolute).name
+            model_file_name = Path(
+                self.config.config[0].absolute).name
+            tag_string = f"{data_file_name}|{trainer_file_name}|{model_file_name}"
+            unique_tag = hashlib.md5(tag_string.encode()).hexdigest()[:8]
+        #Set as a config value for grouping in wandb
+        if wandb.run is not None:
+            wandb.config.update({"unique_tag": unique_tag}, allow_val_change=True)
 
 
 def main():
