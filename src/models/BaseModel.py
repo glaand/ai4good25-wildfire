@@ -159,11 +159,11 @@ class BaseModel(pl.LightningModule, ABC):
         y_hat, y = self.get_pred_and_gt(batch)
 
         loss = self.compute_loss(y_hat, y)
-        f1 = self.train_f1(y_hat, y)
+        f1 = self.train_f1(y_hat.detach(), y.detach())
         self.log(
             "train_loss",
-            loss.item(),
-            on_step=True,
+            loss.detach().item(),
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -172,7 +172,7 @@ class BaseModel(pl.LightningModule, ABC):
         self.log(
             "train_f1",
             self.train_f1,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
@@ -192,10 +192,10 @@ class BaseModel(pl.LightningModule, ABC):
         y_hat, y = self.get_pred_and_gt(batch)
 
         loss = self.compute_loss(y_hat, y)
-        f1 = self.val_f1(y_hat, y)
+        f1 = self.val_f1(y_hat.detach(), y.detach())
         self.log(
             "val_loss",
-            loss.item(),
+            loss.detach().item(),
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -223,13 +223,15 @@ class BaseModel(pl.LightningModule, ABC):
             _type_: _description_
         """
         y_hat, y = self.get_pred_and_gt(batch)
+        y_hat = y_hat.detach()
+        y = y.detach()      
 
         loss = self.compute_loss(y_hat, y)
-        self.test_f1(y_hat.detach(), y.detach())
+        self.test_f1(y_hat, y)
         self.test_metrics.update(y_hat, y)
-        self.conf_mat.update(y_hat.detach(), y.detach())
+        self.conf_mat.update(y_hat, y)
 
-        self.log("test_loss", loss.item(), sync_dist=True)
+        self.log("test_loss", loss.detach().item(), sync_dist=True)
         self.log_dict(
             {
                 "test_f1": self.test_f1,
