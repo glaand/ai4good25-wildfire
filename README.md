@@ -77,19 +77,27 @@ More details on the 2 objectives :
 
 The baseline model is a **UTAE model** to which all inputs for the past five days are provided as input (see paper for more details).
 
-The WildFireSpreadTS comes with an official 12-fold split. To reduce computational load we will evaluate models on the **average performance on three folds (folds 2, 6, and 11)**, use the `--data.data_fold_id` flag of the `train.py` script to run the corresponding split. 
 
-The training script will compute the AP and UCE metrics automatically on the test set at the end of training and they will be logged to wandb. If you need to recompute the metrics on stored predictions you can directly used the `compute_metrics_and_plots` function in `src/models/EvaluationMetrics.py`.
+| Model   |  AP* ↥ | UCE* ↧ | 
+|---|---|---|
+| UTAE baseline  | 0.39345  |  0.38172 |  
 
-To run the three folds of the baseline model:
+\* *average across 12 folds*
+
+The WildFireSpreadTS benchmark comes with an official 12-fold split. Use this official split to evaluate your model and report the average AP and UCE test set performance across the 12 splits. Use the `--data.data_fold_id` flag of the `train.py` script to run the corresponding split. There is also a `--unique_tag` flag that you can use to group folds of the same configuration (Use Group runs by "unique_tag" in the wandb web interface). 
+
+
+
+To reduce computational load when you are exploring different ideas / hyperparameters, you can just use a subset of those folds (for example folds 2, 6, and 11), and do the full evaluation when you have found a strong configuration. 
+
+The training script will compute the AP and UCE metrics automatically on the test set at the end of training and they will be logged to wandb. If you need to recompute the metrics on stored predictions you can directly use the `compute_metrics_and_plots` function in `src/models/EvaluationMetrics.py`.
+
+Example command to run fold 11 of the baseline model:
 
 ```bash 
-python src/train.py --data.data_fold_id 2 --config=cfgs/UTAE/all_features.yaml --trainer=cfgs/trainer_single_gpu.yaml --data=cfgs/data_multitemporal_full_features_doys.yaml --seed_everything=0  --do_test=True --data.data_dir /path/to/your/hdf5/dataset 
-
-python src/train.py --data.data_fold_id 6 --config=cfgs/UTAE/all_features.yaml --trainer=cfgs/trainer_single_gpu.yaml --data=cfgs/data_multitemporal_full_features_doys.yaml --seed_everything=0  --do_test=True --data.data_dir /path/to/your/hdf5/dataset 
-
 python src/train.py --data.data_fold_id 11 --config=cfgs/UTAE/all_features.yaml --trainer=cfgs/trainer_single_gpu.yaml --data=cfgs/data_multitemporal_full_features_doys.yaml --seed_everything=0  --do_test=True --data.data_dir /path/to/your/hdf5/dataset 
 ```
+
 
 ## 5. Tips 🛟
 
