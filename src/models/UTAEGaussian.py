@@ -60,6 +60,11 @@ class UTAEGaussian(BaseModel):
         self.binarizer = SoftBinarizer(init_thresh=0.5, init_scale=10.0)
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
-        return self.binarizer(
+        out = self.binarizer(
             self.model(x, batch_positions=doys, return_att=False)
         )
+        print("This is a test")
+        print(f"Shape of output: {out.shape}")
+        print(out)
+        print("test done")
+        return out
