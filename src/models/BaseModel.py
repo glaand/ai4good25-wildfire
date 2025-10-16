@@ -144,6 +144,10 @@ class BaseModel(pl.LightningModule, ABC):
 
         y_hat = self(x, doys).squeeze(1)
 
+
+        print("y_hat:", y_hat)
+        print("y:", y)
+
         return y_hat, y
 
     def training_step(self, batch, batch_idx):
@@ -157,8 +161,6 @@ class BaseModel(pl.LightningModule, ABC):
             _type_: _description_
         """
         y_hat, y = self.get_pred_and_gt(batch)
-        print("y_hat:", y_hat)
-        print("y:", y)
 
         loss = self.compute_loss(y_hat, y)
         f1 = self.train_f1(y_hat.detach(), y.detach())
