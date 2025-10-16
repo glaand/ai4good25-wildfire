@@ -280,6 +280,8 @@ class BaseModel(pl.LightningModule, ABC):
             return JaccardLoss(mode="binary")
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
+        elif self.hparams.loss_function == "MSE":
+            return nn.MSELoss()
 
     def compute_loss(self, y_hat, y):
         if self.hparams.loss_function == "Focal":
