@@ -133,3 +133,8 @@ Paper citation:
     url={https://openreview.net/forum?id=RgdGkPRQ03}
 }
 ```
+
+UTAEContinuous:
+```
+python src/train.py --data.data_fold_id 11 --config=cfgs/Continuous/all_features.yaml --trainer=cfgs/trainer_single_gpu.yaml --data=cfgs/data_multitemporal_full_features_doys.yaml --seed_everything=0  --do_test=True --data.data_dir ../data/hdf5
+```
