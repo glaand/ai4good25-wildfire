@@ -27,8 +27,13 @@ Fork the code to your own github account and clone it to your machine.
 Create a virtualenv with `python=3.10.4` and install requirements (install mamba or similar virtualenv management framework if needed). 
 
 ```bash
-git clone git@github.com:your-account/ai4good-wildfire-spread-estimation.git
-cd ai4good-wildfire-spread-estimation
+wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+bash Miniforge3-Linux-x86_64.sh
+
+# accept everything, say yes, close terminal onces it finishes and open a new one.
+
+git clone git@github.com:your-account/ai4good25-wildfire.git
+cd ai4good25-wildfire
 
 mamba create -n wildfire python=3.10.4
 mamba activate wildfire
