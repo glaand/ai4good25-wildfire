@@ -329,9 +329,7 @@ class FireSpreadDataset(Dataset):
             # Turn active fire detection time from hhmm to hh.
             x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
-        y = (y > 0).float()
-        if self.use_gaussian_targets and self.is_train:
-            y = self.apply_gaussian_to_mask(y, sigma=self.gaussian_sigma)
+        y = (y > 0).float() 
 
         # Augmentation has to come before normalization, because we have to correct the angle features when we change
         # the orientation of the image.
@@ -365,6 +363,8 @@ class FireSpreadDataset(Dataset):
             new_shape).permute(0, 3, 1, 2)
         x = torch.concatenate(
             [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
+
+        y = self.apply_gaussian_to_mask(y, sigma=self.gaussian_sigma)
 
         return x, y
 

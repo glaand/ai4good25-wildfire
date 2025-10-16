@@ -6,7 +6,7 @@ optimizer:
   init_args:
     lr: 0.01
 model:
-  class_path: UTAEGaussian
+  class_path: UTAEContinuous
   init_args:
     n_channels: 40
     flatten_temporal_dimension: false

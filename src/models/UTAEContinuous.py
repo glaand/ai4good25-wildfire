@@ -6,20 +6,7 @@ import torch.nn as nn
 from .BaseModel import BaseModel
 from .utae_paps_models.utae import UTAE
 
-
-class SoftBinarizer(nn.Module):
-    """Differentiable binarization layer with a learnable threshold and sharpness."""
-    def __init__(self, init_thresh=0.5, init_scale=10.0):
-        super().__init__()
-        self.logit_thresh = nn.Parameter(torch.logit(torch.tensor(init_thresh)))
-        self.scale = nn.Parameter(torch.tensor(init_scale))
-
-    def forward(self, x):
-        # Sigmoid with learned threshold and scale (sharpness)
-        return torch.sigmoid(self.scale * (x - torch.sigmoid(self.logit_thresh)))
-
-
-class UTAEGaussian(BaseModel):
+class UTAEContinuous(BaseModel):
     """_summary_ U-Net architecture with temporal attention in the bottleneck and skip connections.
     """
     def __init__(
@@ -57,14 +44,9 @@ class UTAEGaussian(BaseModel):
             pad_value=0,
             padding_mode="reflect",
         )
-        self.binarizer = SoftBinarizer(init_thresh=0.5, init_scale=10.0)
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
-        out1 = self.model(x, batch_positions=doys, return_att=False)
-        print(f"Shape of output 1: {out1.shape}")
-        out2 = self.binarizer(out1)
-        print("This is a test")
-        print(f"Shape of output 2: {out2.shape}")
-        print(out2)
-        print("test done")
-        return out2
+        out = self.model(x, batch_positions=doys, return_att=False)
+        print("out shape:", out.shape)
+        print(out)
+        return out

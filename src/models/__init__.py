@@ -4,4 +4,4 @@ from .LogisticRegression import LogisticRegression
 from .SMPModel import SMPModel
 from .UTAELightning import UTAELightning
 from .EvaluationMetrics import MyTestMetrics
-from .UTAEGaussian import UTAEGaussian
+from .UTAEContinuous import UTAEContinuous
