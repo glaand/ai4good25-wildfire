@@ -1,7 +1,7 @@
 from typing import Any
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .BaseModel import BaseModel
 from .utae_paps_models.utae import UTAE
@@ -15,13 +15,12 @@ class SoftBinarizer(nn.Module):
         self.scale = nn.Parameter(torch.tensor(init_scale))
 
     def forward(self, x):
-        # Sigmoid with learned threshold and scale (sharpness)
+        # Sigmoid with learnable threshold
         return torch.sigmoid(self.scale * (x - torch.sigmoid(self.logit_thresh)))
 
 
 class UTAEGaussian(BaseModel):
-    """_summary_ U-Net architecture with temporal attention in the bottleneck and skip connections.
-    """
+    """UTAE variant that outputs a continuous fire likelihood map, with optional differentiable binarization."""
     def __init__(
         self,
         n_channels: int,
@@ -34,7 +33,7 @@ class UTAEGaussian(BaseModel):
             n_channels=n_channels,
             flatten_temporal_dimension=flatten_temporal_dimension,
             pos_class_weight=pos_class_weight,
-            use_doy=True, # UTAE uses the day of the year as an input feature
+            use_doy=True,
             *args,
             **kwargs
         )
@@ -60,6 +59,19 @@ class UTAEGaussian(BaseModel):
         self.binarizer = SoftBinarizer(init_thresh=0.5, init_scale=10.0)
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
-        return self.binarizer(
-            self.model(x, batch_positions=doys, return_att=False)
-        )
+        out = self.model(x, batch_positions=doys, return_att=False)
+
+        # --- Fix: ensure output tensor shape is [B, 1, H, W] ---
+        if isinstance(out, (tuple, list)):
+            out = out[0]  # some UTAE versions return (pred, att)
+        elif isinstance(out, dict):
+            out = out["out"] if "out" in out else list(out.values())[0]
+
+        # If UTAE returns [B, T, H, W] or [B, 1, H, W], fix it
+        if out.ndim == 3:
+            out = out.unsqueeze(1)  # -> [B, 1, H, W]
+        elif out.ndim == 5:
+            # sometimes output is [B, T, C, H, W], take last timestep or average
+            out = out[:, -1, 0:1, :, :]
+
+        return self.binarizer(out)
