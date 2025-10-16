@@ -227,6 +227,8 @@ class BaseModel(pl.LightningModule, ABC):
         y = y.detach()      
 
         loss = self.compute_loss(y_hat, y)
+        print("y_hat:", y_hat)
+        print("y:", y)
         self.test_f1(y_hat, y)
         self.test_metrics.update(y_hat, y)
         self.conf_mat.update(y_hat, y)

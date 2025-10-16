@@ -47,6 +47,4 @@ class UTAEContinuous(BaseModel):
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         out = self.model(x, batch_positions=doys, return_att=False)
-        print("out shape:", out.shape)
-        print(out)
         return out
