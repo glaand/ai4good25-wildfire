@@ -364,8 +364,6 @@ class FireSpreadDataset(Dataset):
         x = torch.concatenate(
             [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
 
-        y = self.apply_gaussian_to_mask(y, sigma=self.gaussian_sigma)
-
         return x, y
 
     def augment(self, x, y):
@@ -648,25 +646,3 @@ class FireSpreadDataset(Dataset):
                 # Turn active fire detection time from hhmm to hh.
                 x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
                 yield year, fire_name, img_dates, lnglat, x
-
-    def apply_gaussian_to_mask(self, y: torch.Tensor, sigma: float) -> torch.Tensor:
-        """Converts binary fire mask into smooth Gaussian density map."""
-        if y.max() == 0:
-            return y.float()  # no fires
-
-        # Create a Gaussian kernel
-        kernel_size = int(6 * sigma + 1)
-        coords = torch.arange(kernel_size, dtype=torch.float32) - kernel_size // 2
-        x = coords.view(1, -1)
-        y_ = coords.view(-1, 1)
-        kernel = torch.exp(-(x**2 + y_**2) / (2 * sigma**2))
-        kernel /= kernel.sum()
-
-        # Apply convolution to blur the fire mask
-        y = y.unsqueeze(0).unsqueeze(0).float()  # (1,1,H,W)
-        y_gauss = F.conv2d(y, kernel.unsqueeze(0).unsqueeze(0), padding=kernel_size//2)
-        y_gauss = y_gauss.squeeze(0).squeeze(0)
-
-        # Normalize between 0 and 1
-        y_gauss = y_gauss / y_gauss.max().clamp(min=1e-8)
-        return y_gauss

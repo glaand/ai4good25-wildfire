@@ -12,6 +12,7 @@ from segmentation_models_pytorch.losses import (DiceLoss, JaccardLoss,
                                                 LovaszLoss)
 
 from torchvision.ops import sigmoid_focal_loss
+from .PhysicsBasedLoss import PhysicsBasedLoss
 from .EvaluationMetrics import MyTestMetrics
 
 class BaseModel(pl.LightningModule, ABC):
@@ -24,7 +25,7 @@ class BaseModel(pl.LightningModule, ABC):
         n_channels: int,
         flatten_temporal_dimension: bool,
         pos_class_weight: float,
-        loss_function: Literal["BCE", "Focal", "Lovasz", "Jaccard", "Dice", "MSE"],
+        loss_function: Literal["BCE", "Focal", "Lovasz", "Jaccard", "Dice", "PhysicsBased"],
         use_doy: bool = False,
         required_img_size: Optional[Tuple[int, int]] = None,
         *args: Any,
@@ -227,8 +228,6 @@ class BaseModel(pl.LightningModule, ABC):
         y = y.detach()      
 
         loss = self.compute_loss(y_hat, y)
-        print("y_hat:", y_hat)
-        print("y:", y)
         self.test_f1(y_hat, y)
         self.test_metrics.update(y_hat, y)
         self.conf_mat.update(y_hat, y)
@@ -280,8 +279,8 @@ class BaseModel(pl.LightningModule, ABC):
             return JaccardLoss(mode="binary")
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
-        elif self.hparams.loss_function == "MSE":
-            return nn.MSELoss()
+        elif self.hparams.loss_function == "PhysicsBased":
+            return PhysicsBasedLoss()
 
     def compute_loss(self, y_hat, y):
         if self.hparams.loss_function == "Focal":
