@@ -3,7 +3,7 @@ command:
   - python
   - ${program}
   - -c
-  - cfgs/pContinuous/all_features.yaml
+  - cfgs/Continuous/all_features.yaml
   - --trainer
   - cfgs/trainer_single_gpu.yaml
   - --data
