@@ -47,6 +47,8 @@ class BaseModel(pl.LightningModule, ABC):
         """
         super().__init__(*args, **kwargs)
         self.save_hyperparameters()
+        # Holds the latest full input tensor to enable physics-based loss terms
+        self._last_x = None
 
         if required_img_size is not None:
             self.hparams.required_img_size = torch.Size(
@@ -136,14 +138,17 @@ class BaseModel(pl.LightningModule, ABC):
                             W1 = j * W_req
                             W2 = (j + 1) * W_req
 
-                        x_crop = x[:, :, :, H1:H2, W1:W2]
+            x_crop = x[:, :, :, H1:H2, W1:W2]
+            agg_output[:, H1:H2, W1:W2] = self(x_crop, doys).squeeze(1)
 
-                        agg_output[:, H1:H2, W1:W2] = self(x_crop, doys).squeeze(1)
-
-                y_hat = agg_output
-                return y_hat, y
+        y_hat = agg_output
+        # Save latest input for potential physics-based loss usage
+        self._last_x = x
+        return y_hat, y
 
         y_hat = self(x, doys).squeeze(1)
+        # Save latest input for potential physics-based loss usage
+        self._last_x = x
 
         return y_hat, y
 
@@ -280,7 +285,7 @@ class BaseModel(pl.LightningModule, ABC):
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
         elif self.hparams.loss_function == "PhysicsBased":
-            return PhysicsBasedLoss()
+            return PhysicsBasedLoss(pos_weight=self.hparams.pos_class_weight)
 
     def compute_loss(self, y_hat, y):
         if self.hparams.loss_function == "Focal":
@@ -291,6 +296,9 @@ class BaseModel(pl.LightningModule, ABC):
                 gamma=2,
                 reduction="mean",
             )
+        elif self.hparams.loss_function == "PhysicsBased":
+            # Pass the latest input x so physics-based multiplicative factor can be computed
+            return self.loss(y_hat, y.float(), x=self._last_x)
         else:
             return self.loss(y_hat, y.float())
 

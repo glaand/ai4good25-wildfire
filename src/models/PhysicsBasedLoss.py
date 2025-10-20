@@ -12,21 +12,30 @@ class PhysicsBasedLoss(nn.Module):
       3. Directional penalty (optional): fire spread aligns with wind & slope
 
     Args:
-        lambda_spatial (float): weight for spatial continuity term
-        lambda_directional (float): weight for directional term
+        lambda_spatial (float): weight for spatial continuity term (scales multiplicative factor)
+        lambda_directional (float): weight for directional term (currently unused by default)
         neighborhood_size (int): radius of spatial neighborhood (in pixels)
+        pos_weight (float | None): positive class weight for BCE (aligns with BCE setup elsewhere)
     """
     def __init__(
         self,
         lambda_spatial: float = 0.2,
-        lambda_directional: float = 0.1,
-        neighborhood_size: int = 2
+        lambda_directional: float = 0.0,
+        neighborhood_size: int = 2,
+        pos_weight: float | None = None,
     ):
         super().__init__()
         self.lambda_spatial = lambda_spatial
         self.lambda_directional = lambda_directional
         self.neighborhood_size = neighborhood_size
-        self.bce = nn.BCEWithLogitsLoss()
+        # Use per-pixel BCE so we can apply a multiplicative factor
+        if pos_weight is not None:
+            # single-class pos_weight tensor
+            pw = torch.tensor([pos_weight], dtype=torch.float32)
+        else:
+            pw = None
+        self.register_buffer("_pos_weight", pw if pw is not None else torch.empty(0), persistent=False)
+        self.bce = nn.BCEWithLogitsLoss(pos_weight=self._pos_weight if pw is not None else None, reduction="none")
 
         # Precompute kernel for morphological dilation
         kernel = torch.ones(
@@ -35,13 +44,20 @@ class PhysicsBasedLoss(nn.Module):
         )
         self.register_buffer("kernel", kernel)
 
-    def forward(self, y_hat: torch.Tensor, y: torch.Tensor, x_prev: torch.Tensor = None,
-                wind_dir: torch.Tensor = None, slope: torch.Tensor = None):
+    def forward(
+        self,
+        y_hat: torch.Tensor,
+        y: torch.Tensor,
+        x: torch.Tensor | None = None,
+        wind_dir: torch.Tensor | None = None,
+        slope: torch.Tensor | None = None,
+    ):
         """
         Args:
             y_hat (Tensor): predicted logits, shape (B, H, W) or (B, 1, H, W)
             y (Tensor): ground truth fire mask, shape (B, H, W) or (B, 1, H, W)
-            x_prev (Tensor, optional): previous-day fire mask, shape (B, 1, H, W)
+            x (Tensor, optional): input tensor with time dimension to extract previous-day binary AF mask.
+                                  Expected shape (B, T, C, H, W), with last channel being binary AF.
             wind_dir (Tensor, optional): wind direction in degrees (B, 1, H, W)
             slope (Tensor, optional): slope (B, 1, H, W)
         """
@@ -50,36 +66,37 @@ class PhysicsBasedLoss(nn.Module):
         if y.ndim == 3:
             y = y.unsqueeze(1)
 
-        # BCE data loss
-        bce_loss = self.bce(y_hat, y)
+        # Per-pixel BCE
+        per_pixel_bce = self.bce(y_hat, y)  # (B,1,H,W)
 
-        total_loss = bce_loss
+        # Default multiplicative factor is 1 everywhere
+        factor = torch.ones_like(per_pixel_bce)
 
-        # Only compute physics terms if previous-day fire map is provided
-        if x_prev is not None:
-            # Morphological dilation of previous fire area
-            prev_fire = (x_prev > 0.5).float()
+        # If full input x is provided, derive previous-day AF binary mask and compute a spatial continuity factor
+        if x is not None and x.ndim == 5:
+            # previous day (last observation) and last channel (binary AF) -> shape (B,1,H,W)
+            # x shape expected: (B, T, C, H, W)
+            x_prev_bin = x[:, -1, -1, ...].unsqueeze(1)
+            prev_fire = (x_prev_bin > 0.5).float()
+
+            # Dilate neighborhood of previous fire
             dilated = F.conv2d(prev_fire, self.kernel, padding=self.neighborhood_size)
             dilated = torch.clamp(dilated, 0, 1)
 
+            # Compute how much predicted fire lies outside plausible spread region
             pred_probs = torch.sigmoid(y_hat)
-            # Penalize predicted fire outside dilated region
-            spatial_penalty = torch.mean(F.relu(pred_probs - dilated))
+            outside_mask = F.relu(pred_probs - dilated)  # in [0,1]
 
-            total_loss += self.lambda_spatial * spatial_penalty
+            # Multiplicative factor: 1 + lambda_spatial * outside_mask
+            factor = factor + self.lambda_spatial * outside_mask
 
-            # Optional directional term if wind/slope provided
-            if wind_dir is not None and slope is not None:
-                # Compute directional bias mask
-                wind_x = torch.cos(torch.deg2rad(wind_dir))
-                wind_y = torch.sin(torch.deg2rad(wind_dir))
+            # Directional term disabled by default unless wind/slope are explicitly provided in usable form
+            # Note: wind_dir feature in dataset is transformed (sin of degrees), so a directional penalty
+            # based on an absolute angle isn't directly applicable without extra preprocessing.
 
-                # shift previous fire map along wind direction
-                shifted = self.shift_tensor(prev_fire, wind_x, wind_y)
-                directional_penalty = torch.mean((pred_probs - shifted).pow(2) * F.relu(slope))
-                total_loss += self.lambda_directional * directional_penalty
-
-        return total_loss
+        # Final scalar loss: mean over pixels and batch of factor * per-pixel BCE
+        total = (factor * per_pixel_bce).mean()
+        return total
 
     @staticmethod
     def shift_tensor(tensor, dx, dy):
