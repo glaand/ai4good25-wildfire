@@ -28,14 +28,13 @@ class PhysicsBasedLoss(nn.Module):
         self.lambda_spatial = lambda_spatial
         self.lambda_directional = lambda_directional
         self.neighborhood_size = neighborhood_size
-        # Use per-pixel BCE so we can apply a multiplicative factor
+        # Store pos_weight and compute BCE per-pixel via functional API in forward
         if pos_weight is not None:
             # single-class pos_weight tensor
             pw = torch.tensor([pos_weight], dtype=torch.float32)
+            self.register_buffer("_pos_weight", pw, persistent=False)
         else:
-            pw = None
-        self.register_buffer("_pos_weight", pw if pw is not None else torch.empty(0), persistent=False)
-        self.bce = nn.BCEWithLogitsLoss(pos_weight=self._pos_weight if pw is not None else None, reduction="none")
+            self.register_buffer("_pos_weight", torch.empty(0), persistent=False)
 
         # Precompute kernel for morphological dilation
         kernel = torch.ones(
@@ -67,7 +66,8 @@ class PhysicsBasedLoss(nn.Module):
             y = y.unsqueeze(1)
 
         # Per-pixel BCE
-        per_pixel_bce = self.bce(y_hat, y)  # (B,1,H,W)
+        pos_w = self._pos_weight if self._pos_weight.numel() > 0 else None
+        per_pixel_bce = F.binary_cross_entropy_with_logits(y_hat, y, pos_weight=pos_w, reduction="none")  # (B,1,H,W)
 
         # Default multiplicative factor is 1 everywhere
         factor = torch.ones_like(per_pixel_bce)

@@ -122,7 +122,7 @@ class BaseModel(pl.LightningModule, ABC):
 
                 for i in range(n_H):
                     for j in range(n_W):
-                        
+
                         # If we reach the bottom edge of the image, align the crop window with the bottom edge of the image
                         if i == n_H - 1:
                             H1 = H - H_req
@@ -138,13 +138,13 @@ class BaseModel(pl.LightningModule, ABC):
                             W1 = j * W_req
                             W2 = (j + 1) * W_req
 
-            x_crop = x[:, :, :, H1:H2, W1:W2]
-            agg_output[:, H1:H2, W1:W2] = self(x_crop, doys).squeeze(1)
+                        x_crop = x[:, :, :, H1:H2, W1:W2]
+                        agg_output[:, H1:H2, W1:W2] = self(x_crop, doys).squeeze(1)
 
-        y_hat = agg_output
-        # Save latest input for potential physics-based loss usage
-        self._last_x = x
-        return y_hat, y
+                y_hat = agg_output
+                # Save latest input for potential physics-based loss usage
+                self._last_x = x
+                return y_hat, y
 
         y_hat = self(x, doys).squeeze(1)
         # Save latest input for potential physics-based loss usage
