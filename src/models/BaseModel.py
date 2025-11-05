@@ -25,7 +25,7 @@ class BaseModel(pl.LightningModule, ABC):
         n_channels: int,
         flatten_temporal_dimension: bool,
         pos_class_weight: float,
-        loss_function: Literal["BCE", "Focal", "Lovasz", "Jaccard", "Dice", "PhysicsBased"],
+        loss_function: Literal["BCE", "Focal", "Lovasz", "Jaccard", "Dice", "PhysicsBasedLoss_relu", "PhysicsBasedLoss_leaky_relu"],
         use_doy: bool = False,
         required_img_size: Optional[Tuple[int, int]] = None,
         *args: Any,
@@ -284,8 +284,10 @@ class BaseModel(pl.LightningModule, ABC):
             return JaccardLoss(mode="binary")
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
-        elif self.hparams.loss_function == "PhysicsBased":
-            return PhysicsBasedLoss(pos_weight=self.hparams.pos_class_weight)
+        elif self.hparams.loss_function == "PhysicsBasedLoss_relu":
+            return PhysicsBasedLoss(pos_weight=self.hparams.pos_class_weight, activation_fn="relu")
+        elif self.hparams.loss_function == "PhysicsBasedLoss_leaky_relu":
+            return PhysicsBasedLoss(pos_weight=self.hparams.pos_class_weight, activation_fn="leaky_relu")
 
     def compute_loss(self, y_hat, y):
         if self.hparams.loss_function == "Focal":
@@ -296,7 +298,7 @@ class BaseModel(pl.LightningModule, ABC):
                 gamma=2,
                 reduction="mean",
             )
-        elif self.hparams.loss_function == "PhysicsBased":
+        elif "PhysicsBasedLoss" in self.hparams.loss_function:
             # Pass the latest input x so physics-based multiplicative factor can be computed
             return self.loss(y_hat, y.float(), x=self._last_x)
         else:

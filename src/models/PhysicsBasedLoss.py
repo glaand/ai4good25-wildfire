@@ -19,12 +19,14 @@ class PhysicsBasedLoss(nn.Module):
     """
     def __init__(
         self,
+        activation_fn: str = "relu",
         lambda_spatial: float = 0.2,
         lambda_directional: float = 0.0,
         neighborhood_size: int = 2,
         pos_weight: float | None = None,
     ):
         super().__init__()
+        self.activation_fn = activation_fn
         self.lambda_spatial = lambda_spatial
         self.lambda_directional = lambda_directional
         self.neighborhood_size = neighborhood_size
@@ -85,7 +87,10 @@ class PhysicsBasedLoss(nn.Module):
 
             # Compute how much predicted fire lies outside plausible spread region
             pred_probs = torch.sigmoid(y_hat)
-            outside_mask = F.relu(pred_probs - dilated)  # in [0,1]
+            if self.activation_fn == "relu":
+                outside_mask = F.relu(pred_probs - dilated)  # in [0,1]
+            elif self.activation_fn == "leaky_relu":
+                outside_mask = F.leaky_relu(pred_probs - dilated, negative_slope=0.01)  # in [0,1]
 
             # Multiplicative factor: 1 + lambda_spatial * outside_mask
             factor = factor + self.lambda_spatial * outside_mask
