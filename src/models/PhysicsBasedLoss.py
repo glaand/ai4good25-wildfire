@@ -91,6 +91,8 @@ class PhysicsBasedLoss(nn.Module):
                 outside_mask = F.relu(pred_probs - dilated)  # in [0,1]
             elif self.activation_fn == "leaky_relu":
                 outside_mask = F.leaky_relu(pred_probs - dilated, negative_slope=0.01)  # in [0,1]
+            elif self.activation_fn == "squared":
+                outside_mask = (pred_probs - dilated) ** 2
 
             # Multiplicative factor: 1 + lambda_spatial * outside_mask
             factor = factor + self.lambda_spatial * outside_mask
