@@ -17,7 +17,7 @@ def analyze_sweep(sweep_id):
     
     try:
         sweep = api.sweep(full_sweep_path)
-        print(f"\n## 📊 Sweep ID: {sweep_id} ({sweep.name})")
+        print(f"\n## Sweep ID: {sweep_id} ({sweep.name})")
 
         runs = sweep.runs
         
