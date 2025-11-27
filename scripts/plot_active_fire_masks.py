@@ -148,40 +148,117 @@ def plot_masks(data: np.ndarray, attrs: dict, args):
     plt.show()
 
 
+def process_hdf5_file(hdf5_path: Path, out_dir: Path, active_ch: int = -1, binary: bool = True, max_per_file=None):
+    """Process a single HDF5 file: for each time index t, save a plot with input (t) on left and output (t+1) on right.
+
+    Args:
+        hdf5_path: path to the .h5/.hdf5 file
+        out_dir: directory where plots will be saved
+        active_ch: index of active-fire channel (negative allowed)
+        binary: if True, show binary masks (value>0)
+        max_per_file: optional int, stop after this many saved plots for the file
+    """
+    if h5py is None:
+        raise RuntimeError("h5py is required to read HDF5 files. Install via `pip install h5py`.")
+
+    with h5py.File(str(hdf5_path), "r") as f:
+        if "data" not in f:
+            raise RuntimeError(f"HDF5 file {hdf5_path} does not contain dataset 'data'.")
+        ds = f["data"]
+        # ds shape: (time, channels, H, W)
+        if len(ds.shape) != 4:
+            raise RuntimeError(f"Unexpected dataset shape {ds.shape} in {hdf5_path}")
+        n_time, n_ch, H, W = ds.shape
+
+        # resolve active channel index
+        aidx = active_ch
+        if aidx < 0:
+            aidx = n_ch + aidx
+        if aidx < 0 or aidx >= n_ch:
+            raise RuntimeError(f"Active channel {active_ch} resolves to {aidx} which is out of bounds for {n_ch} channels")
+
+        n_saved = 0
+        for t in range(n_time - 1):
+            in_ch = ds[t, aidx, :, :]
+            out_ch = ds[t + 1, aidx, :, :]
+
+            # convert to numpy arrays (h5py returns array-like)
+            in_arr = np.array(in_ch)
+            out_arr = np.array(out_ch)
+
+            if binary:
+                in_disp = (in_arr > 0).astype(np.uint8)
+                out_disp = (out_arr > 0).astype(np.uint8)
+                cmap = "gray"
+            else:
+                in_disp = np.nan_to_num(in_arr)
+                out_disp = np.nan_to_num(out_arr)
+                cmap = "magma"
+
+            fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+            axs[0].set_title(f"Input t={t}")
+            im0 = axs[0].imshow(in_disp, cmap=cmap)
+            axs[0].axis("off")
+            if not binary:
+                fig.colorbar(im0, ax=axs[0], fraction=0.046, pad=0.04)
+
+            axs[1].set_title(f"Output t={t+1}")
+            im1 = axs[1].imshow(out_disp, cmap=cmap)
+            axs[1].axis("off")
+            if not binary:
+                fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
+
+            plt.suptitle(f"{hdf5_path.stem} index {t}")
+            plt.tight_layout()
+
+            out_file = out_dir / f"{hdf5_path.stem}_{t:05d}.png"
+            fig.savefig(str(out_file), dpi=150)
+            plt.close(fig)
+
+            n_saved += 1
+            if max_per_file is not None and n_saved >= max_per_file:
+                break
+
+    print(f"Saved {n_saved} plots for {hdf5_path}")
+
+
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot active fire masks from HDF5 or TIFF folders")
-    p.add_argument("path", help="Path to .hdf5 file or folder with .tif files (one per time step)")
-    p.add_argument("--time-index", type=int, help="Which time index to display (0-based). Defaults to last time step")
+    p = argparse.ArgumentParser(description="Batch-plot active fire masks from a directory of HDF5 files")
+    p.add_argument("data_dir", help="Root folder containing .h5/.hdf5 files (will search recursively)")
+    p.add_argument("--out-dir", default="plots_active_fire", help="Directory to save generated plots")
     p.add_argument("--active-ch", type=int, default=-1, help="Index of active fire channel (default: -1, last channel)")
-    p.add_argument("--rgb", type=str, default="0,1,2", help="Comma-separated channel indices to use as R,G,B (default 0,1,2)")
+    p.add_argument("--binary", action="store_true", help="Save binary masks (detection>0). If not set, raw channel values are shown")
+    p.add_argument("--max-per-file", type=int, default=None, help="Optional: limit number of plots saved per HDF5 file (for quick checks)")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
-    # parse rgb indices
-    rgb = [None, None, None]
-    try:
-        parts = [p.strip() for p in args.rgb.split(",")]
-        for i in range(min(3, len(parts))):
-            rgb[i] = int(parts[i]) if parts[i] != "" else None
-    except Exception:
-        print("Could not parse --rgb. Use e.g. --rgb 0,1,2")
-        raise
-    args.rgb = rgb
 
-    path = Path(args.path)
-    if not path.exists():
-        raise FileNotFoundError(f"Path {path} does not exist")
+    data_dir = Path(args.data_dir)
+    out_root = Path(args.out_dir)
+    out_root.mkdir(parents=True, exist_ok=True)
 
-    if path.is_file() and path.suffix in (".h5", ".hdf5"):
-        data, attrs = load_hdf5(str(path))
-    elif path.is_dir():
-        data, attrs = load_tif_stack_from_folder(str(path))
-    else:
-        raise RuntimeError("Unsupported path type. Provide either a .hdf5 file or a folder with .tif files")
+    if not data_dir.exists():
+        raise FileNotFoundError(f"Data directory {data_dir} does not exist")
 
-    plot_masks(data, attrs, args)
+    # find all .h5/.hdf5 files recursively
+    hdf5_files = sorted(list(data_dir.rglob("*.h5")) + list(data_dir.rglob("*.hdf5")))
+    if len(hdf5_files) == 0:
+        print(f"No HDF5 files found under {data_dir}")
+        return
+
+    print(f"Found {len(hdf5_files)} HDF5 files. Processing...")
+    for hdf5_path in hdf5_files:
+        rel = hdf5_path.relative_to(data_dir)
+        # create per-file output directory (preserve subdirs)
+        file_out_dir = out_root / rel.parent / hdf5_path.stem
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Processing {hdf5_path} -> {file_out_dir}")
+        try:
+            process_hdf5_file(hdf5_path, file_out_dir, args.active_ch, args.binary, args.max_per_file)
+        except Exception as e:
+            print(f"Error processing {hdf5_path}: {e}")
 
 
 if __name__ == "__main__":
