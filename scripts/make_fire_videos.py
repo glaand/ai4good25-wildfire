@@ -4,13 +4,15 @@ Generate consistent-color MP4 videos directly from active-fire masks
 stored in per-fire HDF5 files (dataset: "data").
 
 For each HDF5 file:
-    - Load data with shape (time, channels, H, W)
-    - Extract the active fire channel (default: -1)
-    - Build a video with fixed color scaling across all frames
-    - No matplotlib plots -> no autoscaling, no flicker
+    - Load data: (time, channels, H, W)
+    - Extract active fire channel (default: last channel)
+    - Load real dates from HDF5 attribute "img_dates"
+    - Build a video with:
+          t = X h (YYYY-MM-DD)
+    - Fixed color scale across frames
 
 Usage:
-    python make_fire_videos.py /path/to/hdf5_dir --out-dir videos
+    python make_fire_videos.py /path/to/hdf5_folder --out-dir videos
 """
 
 import argparse
@@ -19,107 +21,140 @@ import numpy as np
 import h5py
 import imageio.v2 as imageio
 from matplotlib import cm
+from PIL import Image, ImageDraw, ImageFont
 
 
-# ------------------------------------------------------------
-# Convert a list of 2D arrays into a consistent-color video
-# ------------------------------------------------------------
-def make_video_from_arrays(arr_list, out_path: Path, fps=6,
-                           cmap_name="magma", vmin=None, vmax=None):
+# -------------------------------------------------------------------------
+# Create video frames with timestamp + date
+# -------------------------------------------------------------------------
+def make_video_from_arrays(arr_list, out_path: Path, img_dates,
+                           fps=6, cmap_name="magma",
+                           vmin=None, vmax=None,
+                           timestep_hours=24.0, binary=False):
     """
-    Create a video from raw 2D numpy arrays using a fixed color scale.
+    Create a video from raw 2D arrays using a fixed color scale,
+    overlaying:  t = X h (YYYY-MM-DD)
     """
-    # Determine global min/max if not provided
-    if vmin is None:
-        vmin = min(float(np.nanmin(a)) for a in arr_list)
-    if vmax is None:
-        vmax = max(float(np.nanmax(a)) for a in arr_list)
-
-    cmap = cm.get_cmap(cmap_name)
+    # global min/max only for continuous values
+    if not binary:
+        if vmin is None:
+            vmin = min(float(np.nanmin(a)) for a in arr_list)
+        if vmax is None:
+            vmax = max(float(np.nanmax(a)) for a in arr_list)
+        cmap = cm.get_cmap(cmap_name)
 
     writer = imageio.get_writer(out_path, fps=fps, codec="libx264")
 
-    for arr in arr_list:
-        # normalize fixed scale
-        normed = (arr - vmin) / (vmax - vmin + 1e-12)
-        normed = np.clip(normed, 0, 1)
+    # Try to load good font
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+    except:
+        font = ImageFont.load_default()
 
-        # convert to RGB using colormap
-        rgb = (arr.astype(np.uint8) * 255)
-        rgb = np.stack([rgb]*3, axis=-1)
-        writer.append_data(rgb)
+    for t, arr in enumerate(arr_list):
+
+        # ---- Create RGB frame ----
+        if binary:
+            # 0=black, 1=white
+            rgb = (arr.astype(np.uint8) * 255)
+            rgb = np.stack([rgb] * 3, axis=-1)
+        else:
+            # fixed linear normalization
+            normed = np.clip((arr - vmin) / (vmax - vmin + 1e-12), 0, 1)
+            rgb = (cmap(normed)[..., :3] * 255).astype(np.uint8)
+
+        # ---- Convert to PIL for drawing text ----
+        img = Image.fromarray(rgb)
+        draw = ImageDraw.Draw(img)
+
+        # ---- Date extraction ----
+        date_raw = img_dates[t]
+        date_str = date_raw.decode("utf-8") if isinstance(date_raw, (bytes, np.bytes_)) else str(date_raw)
+
+        # ---- Time formatting ----
+        hours = t * timestep_hours
+        text = f"t = {hours:.0f} h  ({date_str})"
+
+        # ---- Draw text ----
+        draw.text((10, 10), text, fill=(255, 255, 255), font=font)
+
+        writer.append_data(np.array(img))
 
     writer.close()
-    print(f"[✓] Saved video: {out_path}")
+    print(f"[✓] Saved video with timestamps: {out_path}")
 
 
-# ------------------------------------------------------------
-# Process a single HDF5 file into a video
-# ------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Process one fire HDF5 → MP4 video
+# -------------------------------------------------------------------------
 def process_single_hdf5(hdf5_path: Path, out_vid: Path,
                         active_ch: int = -1, binary=False, fps=6):
-    """
-    Convert an HDF5 fire file into a video.
-    """
+
     print(f"[+] Processing {hdf5_path}")
 
-    # Load data
+    # Load full array + date strings
     with h5py.File(str(hdf5_path), "r") as f:
-        if "data" not in f:
-            raise RuntimeError(f"File missing 'data' dataset: {hdf5_path}")
-        data = f["data"][...]     # shape (T, C, H, W)
+        data = f["data"][...]               # shape (T, C, H, W)
+        img_dates = f["data"].attrs["img_dates"]
 
     T, C, H, W = data.shape
 
     # Resolve channel index
     ch = active_ch if active_ch >= 0 else C + active_ch
-    if ch < 0 or ch >= C:
-        raise RuntimeError(f"Invalid active channel index: {active_ch}")
 
-    # Extract frames as raw arrays
+    # Extract raw frames
     frames = []
     for t in range(T):
-        arr = data[t, ch]  # 2D
+        arr = data[t, ch]
         if binary:
             arr = (arr > 0).astype(np.uint8)
         frames.append(arr)
 
-    # Make video
-    make_video_from_arrays(frames, out_vid, fps=fps,
-                           cmap_name="magma",
-                           vmin=None, vmax=None)
+    # Build video (24 h per frame)
+    make_video_from_arrays(
+        frames,
+        out_vid,
+        img_dates=img_dates,
+        fps=fps,
+        binary=binary,
+        timestep_hours=24.0
+    )
 
 
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Command-line interface
+# -------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="Make consistent-color fire videos from HDF5 files")
-    ap.add_argument("data_dir", help="directory containing .h5/.hdf5 fire files")
-    ap.add_argument("--out-dir", default="fire_videos", help="directory to save MP4 videos")
-    ap.add_argument("--active-ch", type=int, default=-1, help="active fire channel index (default: -1)")
-    ap.add_argument("--binary", action="store_true", help="use binary mask instead of raw values")
-    ap.add_argument("--fps", type=int, default=6, help="video frame rate")
+    ap = argparse.ArgumentParser(description="Create fire videos from HDF5 files with real dates & elapsed hours.")
+    ap.add_argument("data_dir", help="Directory containing .h5/.hdf5 fire files")
+    ap.add_argument("--out-dir", default="fire_videos", help="Where to save MP4s")
+    ap.add_argument("--active-ch", type=int, default=-1, help="Active fire channel index (default: -1 = last)")
+    ap.add_argument("--binary", action="store_true", help="Use binary masks instead of continuous values")
+    ap.add_argument("--fps", type=int, default=6, help="Video framerate")
     args = ap.parse_args()
 
     data_dir = Path(args.data_dir)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find files
+    # Find all fires
     files = sorted(list(data_dir.rglob("*.h5")) + list(data_dir.rglob("*.hdf5")))
     if len(files) == 0:
         print("No HDF5 files found.")
         return
 
-    print(f"Found {len(files)} HDF5 files.")
+    print(f"Found {len(files)} HDF5 fires.")
 
+    # Process each fire into a video
     for f in files:
         out_vid = out_dir / f"{f.stem}.mp4"
-        process_single_hdf5(f, out_vid,
-                            active_ch=args.active_ch,
-                            binary=args.binary,
-                            fps=args.fps)
+        process_single_hdf5(
+            f,
+            out_vid,
+            active_ch=args.active_ch,
+            binary=args.binary,
+            fps=args.fps
+        )
 
 
 if __name__ == "__main__":
