@@ -10,6 +10,7 @@ For each HDF5 file:
     - Build a video with:
           t = X h (YYYY-MM-DD)
     - Fixed color scale across frames
+    - Binary or continuous mode
 
 Usage:
     python make_fire_videos.py /path/to/hdf5_folder --out-dir videos
@@ -35,6 +36,7 @@ def make_video_from_arrays(arr_list, out_path: Path, img_dates,
     Create a video from raw 2D arrays using a fixed color scale,
     overlaying:  t = X h (YYYY-MM-DD)
     """
+
     # global min/max only for continuous values
     if not binary:
         if vmin is None:
@@ -45,9 +47,10 @@ def make_video_from_arrays(arr_list, out_path: Path, img_dates,
 
     writer = imageio.get_writer(out_path, fps=fps, codec="libx264")
 
-    # Try to load good font
+    # Load a readable font
+    # We use a small size because fire tiles are small (128–512 px)
     try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 26)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 16)
     except:
         font = ImageFont.load_default()
 
@@ -55,11 +58,9 @@ def make_video_from_arrays(arr_list, out_path: Path, img_dates,
 
         # ---- Create RGB frame ----
         if binary:
-            # 0=black, 1=white
             rgb = (arr.astype(np.uint8) * 255)
             rgb = np.stack([rgb] * 3, axis=-1)
         else:
-            # fixed linear normalization
             normed = np.clip((arr - vmin) / (vmax - vmin + 1e-12), 0, 1)
             rgb = (cmap(normed)[..., :3] * 255).astype(np.uint8)
 
@@ -73,10 +74,24 @@ def make_video_from_arrays(arr_list, out_path: Path, img_dates,
 
         # ---- Time formatting ----
         hours = t * timestep_hours
-        text = f"t = {hours:.0f} h  ({date_str})"
+        text = f"t = {hours:.0f} h ({date_str})"
+
+        # ---- Measure text size ----
+        text_w, text_h = draw.textsize(text, font=font)
+
+        # ---- Safe placement ----
+        margin = 5
+        x = margin
+        y = margin
+
+        # ---- Background box ----
+        draw.rectangle(
+            [x - 2, y - 2, x + text_w + 2, y + text_h + 2],
+            fill=(0, 0, 0, 120)   # semi-transparent black
+        )
 
         # ---- Draw text ----
-        draw.text((10, 10), text, fill=(255, 255, 255), font=font)
+        draw.text((x, y), text, fill=(255, 255, 255), font=font)
 
         writer.append_data(np.array(img))
 
@@ -148,6 +163,7 @@ def main():
     # Process each fire into a video
     for f in files:
         out_vid = out_dir / f"{f.stem}.mp4"
+
         process_single_hdf5(
             f,
             out_vid,
