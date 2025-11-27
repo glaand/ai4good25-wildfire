@@ -46,7 +46,7 @@ def make_video_from_arrays(arr_list, out_path: Path, fps=6,
 
         # convert to RGB using colormap
         rgb = (arr.astype(np.uint8) * 255)
-    r   rgb = np.stack([rgb]*3, axis=-1)
+        rgb = np.stack([rgb]*3, axis=-1)
         writer.append_data(rgb)
 
     writer.close()
