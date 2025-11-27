@@ -77,7 +77,9 @@ def make_video_from_arrays(arr_list, out_path: Path, img_dates,
         text = f"t = {hours:.0f} h ({date_str})"
 
         # ---- Measure text size ----
-        text_w, text_h = draw.textsize(text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
 
         # ---- Safe placement ----
         margin = 5
