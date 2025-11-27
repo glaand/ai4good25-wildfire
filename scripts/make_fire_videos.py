@@ -146,7 +146,7 @@ def main():
     ap.add_argument("data_dir", help="Directory containing .h5/.hdf5 fire files")
     ap.add_argument("--out-dir", default="fire_videos", help="Where to save MP4s")
     ap.add_argument("--active-ch", type=int, default=-1, help="Active fire channel index (default: -1 = last)")
-    ap.add_argument("--binary", action="store_true", help="Use binary masks instead of continuous values")
+    ap.add_argument("--binary", action="store_true", default=True, help="Use binary masks instead of continuous values")
     ap.add_argument("--fps", type=int, default=6, help="Video framerate")
     args = ap.parse_args()
 
